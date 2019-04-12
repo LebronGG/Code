@@ -1,0 +1,18 @@
+git clone 自己的仓库地址
+将要上传的工程文件放在本地文件里
+git add .                   （注：别忘记后面的.，此操作是把Test文件夹下面的文件都添加进来）
+git commit  -m  "master"  （注：“提交信息”里面换成你需要，如“first commit”）
+git push -u origin master   （注：此操作目的是把本地仓库push到github上面，此步骤需要你输入帐号和密码）
+
+image_tensor
+detection_boxes
+bazel-bin/tensorflow/tools/graph_transforms/transform_graph \
+    --in_graph='./model/faster-rcnn-inception-v2.pb' \
+    --out_graph='./model/faster-rcnn.pb' \
+    --inputs='image_tensor' \
+    --outputs='detection_boxes' \
+    --transforms='
+    fold_constants(ignore_errors=true)
+    fold_batch_norms
+    fold_old_batch_norms
+    quantize_weights'

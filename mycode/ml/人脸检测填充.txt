@@ -1,0 +1,104 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+#include <dlib\image_processing\frontal_face_detector.h>
+#include <dlib\gui_widgets.h>
+#include <dlib\image_io.h>
+#include<dlib\opencv.h>
+#include<iostream>
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+#include <stdio.h>
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define INPUT_TXT_FILE      "D:\\Video11111111111111\\1.txt"
+#define StorageFile     "D:\\Video11111111111111\\facebackground"
+
+int main(int argc, char**argv)
+{
+	const string storagefile = StorageFile;
+	SYSTEMTIME st;
+	char imageName[200];
+	char timeName[30];
+	string strFileName;
+	int framecount = 0;
+	int count = 0;
+	int sum = 0;
+	int x1, y1, x2, y2;
+	frontal_face_detector detector = get_frontal_face_detector();
+	ifstream inStr(INPUT_TXT_FILE);
+	if (!inStr.is_open())
+	{
+		cout << "read videofile error" << endl;
+		getchar();
+		return -1;
+	}
+	while (std::getline(inStr, strFileName))
+	{
+		if (!strFileName.empty())
+		{
+			VideoCapture capture(strFileName);
+			while (1)
+			{
+				Mat frame;
+				capture >> frame;
+				if (frame.empty())
+				{
+					cout << "Process Current Video Complete!" << endl;
+					break;
+				}
+				GetLocalTime(&st);
+				int year = st.wYear;
+				int month = st.wMonth;
+				int day = st.wDay;
+				int hour = st.wHour;
+				int minute = st.wMinute;
+				int second = st.wSecond;
+				sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+				sprintf_s(imageName, "%s/%s%d%s", storagefile.c_str(), timeName, ++framecount, ".jpg");
+				if (framecount % 30 == 0)
+				{
+					dlib::cv_image<rgb_pixel> img(frame);
+					std::vector<dlib::rectangle> dets = detector(img);
+					for (int i = 0; i < dets.size(); i++)
+					{
+						x1 = dets[i].left();
+						y1 = dets[i].top();
+						x2 = dets[i].right();
+						y2 = dets[i].bottom();
+						if (x1 < 0)
+							x1 = 0;
+						if (y1 < 0)
+							y1 = 0;
+						if (x2 > frame.cols)
+							x2 = frame.cols;
+						if (y2 > frame.rows)
+							y2 = frame.rows;
+						Rect rect(x1, y1, x2 - x1, y2 - y1);
+						cv::rectangle(frame, rect, Scalar(255, 255, 255), -1, 1, 0);
+					}
+					imwrite(imageName, frame);//保存保存一帧图片  
+					cout << "正在处理的个数:" << framecount << endl;
+					cout << "存入照片的个数为:" << count << endl;
+					count++;
+				}
+				if (framecount > 999)
+					framecount = 0;
+			}
+		}
+	}
+	system("pause");
+	return 0;
+}

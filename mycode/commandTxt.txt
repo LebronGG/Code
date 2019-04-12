@@ -1,0 +1,32 @@
+﻿
+haartraining.exe -data D:\zhou\ThumbupData\Model5 -vec D:\zhou\ThumbupData\thumbNew.vec -bg D:\zhou\trainData\addNegativeImage\addNegInfo1.txt -nonsym -mode BASIC -mem 512 -nsplits 2 -npos 3000 -nneg 3000 -minhitrate 0.9999 -w 24 -h 36 -nstages 28
+
+traincascadeX64.exe -data D:\zhou\ThumbupData\Model6 -vec D:\zhou\ThumbupData\thumbNew.vec -bg D:\zhou\trainData\addNegativeImage\addNegInfo1.txt -numPos 10000 -numNeg 20000 -numStages 28 -precalcValBufSize 512 -precalcIdxBufSize 512 -w 24 -h 36 -mode BASIC -baseFormatSave -maxWeakCount 300 -minHitRate 0.9999 -maxDepth 2
+
+
+//performance.exe
+//forThumbup
+F:\MyFiles\Train\Opencv2.4.6\Release\opencv_performance.exe -info F:\MyFiles\Train\thumbupTestFullInfo_new.txt -sf 1.1 -w 18 -h 30 -ni -data F:\MyFiles\Train\thumbForAdaboostTest\TestResult_new\ThumbUpModel_adaboost_haar_8k_10k_cascade_20_new.xml
+
+//forFist
+F:\MyFiles\Train\Opencv2.4.6\Release\opencv_performance.exe -info F:\MyFiles\Train\fistTestInfo.txt -sf 1.1 -w 18 -h 18 -ni -data F:\MyFiles\AdaboostModel\fist\cascade24.xml
+
+//for Palm
+F:\MyFiles\Train\Opencv2.4.6\Release\opencv_performance.exe -info F:\MyFiles\Train\PalmTestFullInfo.txt -sf 1.1 -w 18 -h 30 -ni -data F:\MyFiles\Train\palmForAdaboostTest\PalmModel_adaboost_harr_10k_18k_cascade_18.xml
+
+// for palm and thumbup 
+F:\MyFiles\Train\Opencv2.4.6\Release\opencv_performance.exe -info F:\MyFiles\Train\Thumbup_pos.txt -sf 1.1 -w 18 -h 30 -ni -data F:\MyFiles\Train\palmAndThumbUpAdaboost\PalmAndThumbUpModel_8kX12k_15.xml
+
+// for Box
+E:\workplace\boxForAdaboostTest\Opencv2.4.6\Release\opencv_performance.exe -info E:\workplace\boxForAdaboostTest\boxForAdaTestInfo.txt -sf 1.1 -w 30 -h 18 -ni -data E:\workplace\boxForAdaboostTest\boxModelFile0821_2kX4k_21.xml
+
+// annotation
+F:\MyFiles\MyCode\ReadListVideoFiles\ReadListVideoFiles\opencv_annotation.exe -images F:\MyFiles\MyCode\ReadListVideoFiles\ReadListVideoFiles\xu11\images -annotations F:\MyFiles\MyCode\ReadListVideoFiles\ReadListVideoFiles\xu11\annotation.txt 
+
+//mine
+createsample:
+opencv_createsamples.exe -info pos.txt -vec pos.vec -bg neg.txt -num 200 -w 24 -h 24
+haartraining：
+opencv_haartraining.exe -data haar -vec pos.vec -bg neg.txt -nonsym -mode BASIC -mem 512 -nsplits 2 -npos 5000 -nneg 8000 -minhitrate 0.9999 -maxfalsealarm 0.4 -w 22 -h 22 -nstages 15 -maxWeakCount 300  -maxDepth 2
+traincascade：
+opencv_traincascade.exe -data xml -vec pos.vec -bg neg.txt -numPos 4000 -numNeg 5000  -precalcValBufSize 1024 -precalcIdxBufSize 1024 -w 20 -h 20 -mode all -maxWeakCount 300 -minHitRate 0.9995 -maxFalseAlarmRate 0.4 -maxDepth 1 -featureType LBP -numStages 13

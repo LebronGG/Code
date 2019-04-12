@@ -1,0 +1,164 @@
+#include "stdafx.h"
+#include <iostream>
+#include <stdio.h>
+#include <math.h>
+#include <opencv/cv.h>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+using namespace cv;
+using namespace std;
+void main()
+{
+	IplImage *paletteImageRam1 = cvLoadImage("1.jpg");
+	IplImage *paletteImageRam2 = cvLoadImage("2.jpg");
+	IplImage *paletteImageRam3 = cvLoadImage("3.jpg");																	
+	double width, height;
+	width = double(paletteImageRam1->width) *3.0;   //第一幅图片的宽度乘以3就是拼接完的图像宽度,此处假设三张图的宽高都一样，实际使用可以将各自图像的宽度相加
+	height = double(paletteImageRam1->height);        //第一幅图像的高度
+
+	IplImage* des = cvCreateImage(cvSize(width, height), paletteImageRam1->depth, paletteImageRam1->nChannels);   //生成一个三幅拼接用的容器图片
+	cvSetImageROI(des, cvRect(0, 0, paletteImageRam1->width, height)); //设置容器图片中感兴趣的部分，前两个左边0,0代表感兴趣的区域的起点，后两个代表感兴趣区域的宽高                                                 
+	cvCopy(paletteImageRam1, des);      //将第一幅图像放到感兴趣的区域里面，也就是第一个方格
+	cvResetImageROI(des);
+	cvSetImageROI(des, cvRect(paletteImageRam1->width, 0, paletteImageRam1->width, height));
+	cvCopy(paletteImageRam2, des);
+	cvResetImageROI(des);
+	cvSetImageROI(des, cvRect(paletteImageRam1->width * 2, 0, paletteImageRam1->width, height));
+	cvCopy(paletteImageRam3, des);
+	cvResetImageROI(des);
+	cvShowImage("mine", des);
+	waitKey(0);
+	cvReleaseImage(&des);
+}
+
+
+
+
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/opencv.hpp"
+#include<iostream>
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+#include <stdio.h>
+using namespace cv;
+using namespace std;
+
+typedef struct STOBJSTATUS
+{
+	int count;
+	cv::Rect m_ObjRect; // bounding box	
+};
+
+IplImage* Merge(IplImage* src, const int iFaceNum, const STOBJSTATUS *pstFaceStatus);
+IplImage* Single(IplImage* src, const int iFaceNum, const STOBJSTATUS *pstFaceStatus);
+
+int main(int argc, char** argv)
+{
+	//STOBJSTATUS pst[1] = { { 1,Rect(259,187,129,129) } };
+	//STOBJSTATUS pst[2] = { { 2,Rect(213, 82, 21, 21) },{ 2,Rect(332, 74, 22, 22) } };
+	//STOBJSTATUS pst[6] = { { 6,Rect(182,174,46,46) },{6,Rect(291,191,47,47)},{6,Rect(287,50,52,52)},{6,Rect(391,149,57,57)},{6,Rect(169,72,51,51)},{6,Rect(80,187,60,60)} };
+	STOBJSTATUS pst[10] = { { 10,Rect(399,38,113,113) },{ 10,Rect(274,50,105,105) },{ 10,Rect(15,48,106,106) },{ 10,Rect(144,51,107,107) },{ 10,Rect(523,50,106,106) },{ 10,Rect(13,234,109,109) },{ 10,Rect(141,235,112,112) },{ 10,Rect(401,234,111,111) },{ 10,Rect(529,238,103,103) },{ 10,Rect(273,247,106,106) } };
+	const STOBJSTATUS *pstFaceStatus = pst;
+	const int iFaceNum = pst->count;
+	IplImage *img = cvLoadImage("10.jpg", 1);
+	IplImage *pSrcImage = Merge(img, iFaceNum, pstFaceStatus);
+	cvShowImage("img", img);
+	cvShowImage("pSrcImage", pSrcImage);
+	cvWaitKey(0);
+	cvReleaseImage(&img);
+	cvReleaseImage(&pSrcImage);
+	cvDestroyAllWindows();
+	return 0;
+}
+
+IplImage* Merge(IplImage* src, const int iFaceNum, const STOBJSTATUS *pstFaceStatus)
+{
+	IplImage* des = cvCreateImage(cvSize(20 * iFaceNum, 20), src->depth, src->nChannels);
+	CvSize sz(20, 20);
+	IplImage *Small = cvCreateImage(sz, src->depth, src->nChannels);
+	for (int i = 0; i < iFaceNum; i++)
+	{
+		int ROI_x, ROI_y, ROI_w, ROI_h;
+		int x, y, w, h;
+		float radio_ROI = 0.15;
+		x = pstFaceStatus[i].m_ObjRect.x;
+		y = pstFaceStatus[i].m_ObjRect.y;
+		w = pstFaceStatus[i].m_ObjRect.width;
+		h = pstFaceStatus[i].m_ObjRect.height;
+		ROI_x = x - w*radio_ROI;
+		if (ROI_x < 0)
+			ROI_x = 0;
+
+		ROI_y = y - h*radio_ROI;
+		if (ROI_y < 0)
+			ROI_y = 0;
+
+		ROI_w = (1 + radio_ROI * 2)*w;
+		if (ROI_x + ROI_w > src->width)
+		{
+			ROI_w = src->width - ROI_x - 1;
+		}
+
+		ROI_h = (1 + radio_ROI * 2)*h;
+		if ((ROI_h + ROI_y) > src->height)
+		{
+			ROI_h = src->height - ROI_y - 1;
+		}
+		IplImage* part = cvCreateImageHeader(cvSize(ROI_w, ROI_h), src->depth, src->nChannels);
+		uchar* ptr = (uchar*)(src->imageData + ROI_y * src->widthStep + ROI_x * src->nChannels);
+		cvSetData(part, ptr, src->widthStep);
+		cvResize(part, Small, CV_INTER_CUBIC);
+		cvSetImageROI(des, cvRect(20 * i, 0, 20, 20));
+		cvCopy(Small, des);
+		cvResetImageROI(des);
+		cvReleaseImageHeader(&part);
+	}
+	cvReleaseImage(&Small);
+	return des;
+}
+
+IplImage* Single(IplImage* src,const int iFaceNum, const STOBJSTATUS *pstFaceStatus)
+{
+	CvSize sz(20, 20);
+	IplImage *Small = cvCreateImage(sz, src->depth, src->nChannels);
+	int ROI_x, ROI_y, ROI_w, ROI_h;
+	int x, y, w, h;
+	int i = 0;
+	float radio_ROI = 0.15;
+	x = pstFaceStatus[i].m_ObjRect.x;
+	y = pstFaceStatus[i].m_ObjRect.y;
+	w = pstFaceStatus[i].m_ObjRect.width;
+	h = pstFaceStatus[i].m_ObjRect.height;
+	ROI_x = x - w*radio_ROI;
+	if (ROI_x < 0)
+		ROI_x = 0;
+
+	ROI_y = y - h*radio_ROI;
+	if (ROI_y < 0)
+		ROI_y = 0;
+
+	ROI_w = (1 + radio_ROI * 2)*w;
+	if (ROI_x + ROI_w > src->width)
+	{
+		ROI_w = src->width - ROI_x - 1;
+	}
+
+	ROI_h = (1 + radio_ROI * 2)*h;
+	if ((ROI_h + ROI_y) > src->height)
+	{
+		ROI_h = src->height - ROI_y - 1;
+	}
+	IplImage* part = cvCreateImageHeader(cvSize(ROI_w, ROI_h), src->depth, src->nChannels);
+	uchar* ptr = (uchar*)(src->imageData + ROI_y * src->widthStep + ROI_x * src->nChannels);
+	cvSetData(part, ptr, src->widthStep);
+	cvResize(part, Small, CV_INTER_CUBIC);
+	cvReleaseImageHeader(&part);
+	return Small;
+}

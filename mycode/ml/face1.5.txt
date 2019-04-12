@@ -1,0 +1,129 @@
+#include objdetectobjdetect.hpp
+#include opencv2highguihighgui.hpp
+#include opencv2imgprocimgproc.hpp
+#include opencv2mlml.hpp
+#include opencv2opencv.hpp
+#include ImageFeatrueExtract.h
+#include dlibimage_processingfrontal_face_detector.h
+#include dlibgui_widgets.h
+#include dlibimage_io.h
+#includedlibopencv.h
+#includeiostream
+
+#include atltime.h
+#include windows.h
+#include stdlib.h
+#include io.h
+#include direct.h
+#include fstream
+
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+
+int main(int argc, char argv)
+{
+	const string faces = .face;
+	if (_access(faces.c_str(), 0) == -1)
+		_mkdir(faces.c_str());
+	const string xu = .xu;
+	if (_access(xu.c_str(), 0) == -1)
+		_mkdir(xu.c_str());
+	Mat frame, faceROI, tmpImg, GrayfaceROI, xuROI;
+	int x = 0, y = 0, w = 0, h = 0;  the dlib face location
+	int ROI_x = 0, ROI_y = 0, ROI_w = 0, ROI_h = 0, ROI_h_p = 0;
+	float radio_ROI = 0.01;
+	float radio_xu = 1.5;
+	SYSTEMTIME st;
+	char imageNameface[200];
+	char imageNamexu[200];
+	char timeName[30];
+	string strFileName;
+	int facecount = 0;
+	int xucount = 0;
+	frontal_face_detector detector = get_frontal_face_detector();
+	VideoCapture cap(0);
+	while (1)
+	{
+		cap  frame;
+		frame.copyTo(tmpImg);
+		dlibcv_imagebgr_pixel img(frame);
+		stdvectordlibrectangle dets = detector(img);
+		cout  Face Num   dets.size()  endl;;
+		for (int i = 0; i  dets.size(); i++)
+		{
+			x = dets[i].left();
+			y = dets[i].top();
+			w = dets[i].right() - dets[i].left();
+			h = dets[i].bottom() - dets[i].top();
+			if (x  0)
+				x = 0;
+			if (y  0)
+				y = 0;
+			if (x + w  img.nc())
+				w = img.nc() - x - 1;
+			if (y + h  img.nr())
+				h = img.nr() - y - 1;
+
+			ROI_x = x - radio_ROIw;
+			if (ROI_x  0)
+				ROI_x = 0;
+
+			ROI_y = y - radio_ROIh;
+			if (ROI_y  0)
+				ROI_y = 0;
+
+				ROI_w = (1 + radio_ROI)w;
+			ROI_w = w;
+			if (ROI_x + ROI_w  tmpImg.cols)
+			{
+				ROI_w = tmpImg.cols - ROI_x - 1;
+			}
+
+				ROI_h = (1 + radio_ROI)h;
+			ROI_h = h;
+			if ((ROI_h + ROI_y)  tmpImg.rows)
+			{
+				ROI_h = tmpImg.rows - ROI_y - 1;
+			}
+
+			ROI_h_p = ROI_hradio_xu;
+			if ((ROI_h_p + ROI_y)  tmpImg.rows)
+			{
+				ROI_h_p = tmpImg.rows - ROI_y - 1;
+			}
+
+			faceROI = tmpImg(Rect(ROI_x, ROI_y, ROI_w, ROI_h));
+			cvrectangle(frame, Rect(ROI_x, ROI_y, ROI_w, ROI_h), Scalar(255, 0, 0), 2);  rectangle the detect ROI
+			GetLocalTime(&st);
+			int year = st.wYear;
+			int month = st.wMonth;
+			int day = st.wDay;
+			int hour = st.wHour;
+			int minute = st.wMinute;
+			int second = st.wSecond;
+			sprintf_s(timeName, %04d%02d%02d%02d%02d%02d%s, year, month, day, hour, minute, second, _);
+			sprintf_s(imageNameface, %s%s%d%s, faces.c_str(), timeName, ++facecount, .jpg);
+			imwrite(imageNameface, faceROI);每一帧的随机保存
+			cout  采集人脸个数：  facecount  endl;
+			if (facecount  999)
+				facecount = 0;
+			xuROI = tmpImg(Rect(ROI_x, ROI_y, ROI_w, ROI_h_p));
+			sprintf_s(imageNamexu, %s%s%d%s, xu.c_str(), timeName, ++xucount, .jpg);
+			cout  采集嘘个数：  xucount  endl;
+			imwrite(imageNamexu, xuROI);每一帧的随机保存
+			cvrectangle(tmpImg, Rect(ROI_x, ROI_y, ROI_w, ROI_h_p), Scalar(255, 0, 0), 2);
+			if (xucount  999)
+				xucount = 0;
+		}
+		imshow(face, frame);
+		imshow(xu, tmpImg);
+		int c = cvwaitKey(1);
+		if (c == 27)
+			return -1;
+	}
+	return 0;
+}

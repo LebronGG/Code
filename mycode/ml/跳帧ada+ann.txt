@@ -1,0 +1,302 @@
+/////////////////////////////直接读
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+
+#include <fstream>
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define ADABOOST_MODEL_FILE						"./modelFile/faceModelFile_6kX9k_23.xml"
+#define ANN_MODEL_FILE                              "./modelFile/faceModel_lbp_Hog_3layer0825_60X60.xml"
+
+int main(int argc, char** argv)
+{
+	char imageName[200];
+	char timeName[30];
+	int64 i64FrmSeqNum = 0;
+	SYSTEMTIME st;
+	CString strDate, strTime;
+	int count = 0;
+	int x, y, width, height;
+	Ptr<ANN_MLP> ann = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE); // load ANN model File 
+	if (ann->empty())
+	{
+		std::cout << "Load ANN model File Error" << std::endl;
+		getchar();
+		return -1;
+	}
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);  // load  Adaboost file
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+	const string FileName = "./Adaface";
+	if (_access(FileName.c_str(), 0) == -1)
+		_mkdir(FileName.c_str());
+	VideoCapture cap("D:\\video\\Logitech Webcam1\\Video 33.wmv");
+	cv::Mat frame_cpp;
+	if (!cap.isOpened())
+	{
+		cout << "Couldn't Open Cam!" << endl;
+		getchar();
+		return -1;
+	}
+	while (1)
+	{
+		cap >> frame_cpp;
+		if (frame_cpp.empty())
+		{
+			std::cout << "Read frame Error!" << std::endl;
+			destroyAllWindows();
+			return -1;
+		}
+		Mat afterANN;
+		frame_cpp.copyTo(afterANN);
+		if (i64FrmSeqNum % 20 == 0)
+		{
+			Mat GrayFrame;
+			if (frame_cpp.channels() == 3)
+				cvtColor(frame_cpp, GrayFrame, COLOR_BGR2GRAY);
+			else
+				GrayFrame = frame_cpp;
+			vector<Rect> vecObjects;
+			object_cascade.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, Size(20, 20), Size(200, 200));
+			Mat temp;
+			frame_cpp.copyTo(temp);
+			for (unsigned int i = 0; i < vecObjects.size(); i++)
+			{
+				Rect rect = vecObjects[i];
+				x = (int)(rect.x - (rect.width) * 0.0);
+				y = (int)(rect.y - (rect.height) * 0.0);
+				width = (int)(rect.width) * 1.0;
+				height = (int)(rect.height) * 1.0;
+				if (x < 0)
+					x = 0;
+				if (y < 0)
+					y = 0;
+				if ((x + width) > temp.cols)
+					width = (int)(temp.cols) - x;
+				if ((y + height) > temp.rows)
+					height = (int)(temp.rows) - y;
+				cv::Mat imageROI = temp(Rect(x, y, width, height));
+				cv::rectangle(frame_cpp, Rect(x, y, width, height), Scalar(255, 0, 0), 2);
+				cv::Mat extractRoi;
+				if (imageROI.channels() == 3)
+					cv::cvtColor(imageROI, extractRoi, COLOR_BGR2GRAY);
+				else
+					extractRoi = imageROI;
+				cv::resize(extractRoi, extractRoi, Size(60, 60), INTER_CUBIC);
+				cv::Mat feature = ImageFeatureLib::Get_TPLBP_Hog_Grid(extractRoi, 9, 4, 4, 4, 4);
+				cv::Mat result;
+				ann->predict(feature, result);
+				float* pfRow = result.ptr<float>(0);
+				if (pfRow[0] > 0.95)
+				{
+					cv::rectangle(afterANN, Rect(x, y, width, height), Scalar(0, 255, 0), 2);
+					GetLocalTime(&st);
+					int year = st.wYear;
+					int month = st.wMonth;
+					int day = st.wDay;
+					int hour = st.wHour;
+					int minute = st.wMinute;
+					int second = st.wSecond;
+					sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+					sprintf_s(imageName, "%s/%s%d%s", FileName.c_str(), timeName, count++, ".jpg");
+					imwrite(imageName, imageROI);
+					if (count > 999)
+						count = 0;
+				}	
+			}
+		}
+		i64FrmSeqNum++;
+		char sText[128] = "\0";
+		std::sprintf(sText, "%d", i64FrmSeqNum);
+		cv::putText(frame_cpp, sText, Point(30, 30), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 2);
+		cv::putText(afterANN, sText, Point(30, 30), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 2);
+		std::cout << "Frame : " << i64FrmSeqNum << std::endl;
+		cv::imshow("Adaboost", frame_cpp);
+		cv::imshow("Ann", afterANN);
+		int iKey = cv::waitKey(10);
+		if (iKey == 27)
+			break;
+	}
+	destroyAllWindows();
+	system("pause");
+	return 0;
+}
+///////////////////////////////////////////////////读文件
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+#include <stdio.h>
+
+#include <fstream>
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define INPUT_TXT_FILE                          "C:\\Users\\Administrator\\Desktop\\negBox\\box.txt"
+#define ADABOOST_MODEL_FILE						"./modelFile/faceModelFile_6kX9k_23.xml"
+#define ANN_MODEL_FILE                              "./modelFile/faceModel_lbp_Hog_3layer0825_60X60.xml"
+
+int main(int argc, char** argv)
+{
+	char imageName[200];
+	char timeName[30];
+	int64 i64FrmSeqNum = 0;
+	SYSTEMTIME st;
+	CString strDate, strTime;
+	string strFileName;
+	int count = 0;
+	int all = 0;
+	int x, y, width, height;
+	Ptr<ANN_MLP> ann = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE); // load ANN model File 
+	if (ann->empty())
+	{
+		std::cout << "Load ANN model File Error" << std::endl;
+		getchar();
+		return -1;
+	}
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);  // load  Adaboost file
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+	const string FileName = "./Adaface";
+	if (_access(FileName.c_str(), 0) == -1)
+		_mkdir(FileName.c_str());
+
+	cv::Mat frame_cpp;
+
+	ifstream inStr(INPUT_TXT_FILE);
+	if (!inStr.is_open())
+	{
+		cout << "read videofile error" << endl;
+		getchar();
+		return -1;
+	}
+	while (std::getline(inStr, strFileName))
+	{
+		if (!strFileName.empty())
+		{
+			cout << "处理个数" << all << endl;
+			all++;
+			VideoCapture cap(strFileName);
+			if (!cap.isOpened())
+			{
+				cout << "Couldn't Open Cam!" << endl;
+				getchar();
+				return -1;
+			}
+			while (1)
+			{
+				cap >> frame_cpp;
+				if (frame_cpp.empty())
+				{
+					std::cout << "Read frame Error!" << std::endl;
+					destroyAllWindows();
+					break;
+				}
+				Mat afterANN;
+				frame_cpp.copyTo(afterANN);
+				if (i64FrmSeqNum % 20 == 0)
+				{
+					Mat GrayFrame;
+					if (frame_cpp.channels() == 3)
+						cvtColor(frame_cpp, GrayFrame, COLOR_BGR2GRAY);
+					else
+						GrayFrame = frame_cpp;
+					vector<Rect> vecObjects;
+					object_cascade.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, Size(20, 20), Size(200, 200));
+					Mat temp;
+					frame_cpp.copyTo(temp);
+					for (unsigned int i = 0; i < vecObjects.size(); i++)
+					{
+						Rect rect = vecObjects[i];
+						x = (int)(rect.x - (rect.width) * 0.0);
+						y = (int)(rect.y - (rect.height) * 0.0);
+						width = (int)(rect.width) * 1.0;
+						height = (int)(rect.height) * 1.0;
+						if (x < 0)
+							x = 0;
+						if (y < 0)
+							y = 0;
+						if ((x + width) > temp.cols)
+							width = (int)(temp.cols) - x;
+						if ((y + height) > temp.rows)
+							height = (int)(temp.rows) - y;
+						cv::Mat imageROI = temp(Rect(x, y, width, height));
+						cv::rectangle(frame_cpp, Rect(x, y, width, height), Scalar(255, 0, 0), 2);
+						cv::Mat extractRoi;
+						if (imageROI.channels() == 3)
+							cv::cvtColor(imageROI, extractRoi, COLOR_BGR2GRAY);
+						else
+							extractRoi = imageROI;
+						cv::resize(extractRoi, extractRoi, Size(60, 60), INTER_CUBIC);
+						cv::Mat feature = ImageFeatureLib::Get_TPLBP_Hog_Grid(extractRoi, 9, 4, 4, 4, 4);
+						cv::Mat result;
+						ann->predict(feature, result);
+						float* pfRow = result.ptr<float>(0);
+						if (pfRow[0] > 0.95)
+						{
+							cv::rectangle(afterANN, Rect(x, y, width, height), Scalar(0, 255, 0), 2);
+							GetLocalTime(&st);
+							int year = st.wYear;
+							int month = st.wMonth;
+							int day = st.wDay;
+							int hour = st.wHour;
+							int minute = st.wMinute;
+							int second = st.wSecond;
+							sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+							sprintf_s(imageName, "%s/%s%d%s", FileName.c_str(), timeName, count++, ".jpg");
+							imwrite(imageName, imageROI);
+							if (count > 999)
+								count = 0;
+						}
+					}
+				}
+				i64FrmSeqNum++;
+				char sText[128] = "\0";
+				std::sprintf(sText, "%d", i64FrmSeqNum);
+				cv::putText(frame_cpp, sText, Point(30, 30), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 2);
+				cv::putText(afterANN, sText, Point(30, 30), FONT_HERSHEY_PLAIN, 2.0, Scalar(255, 0, 0), 2);
+				std::cout << "Frame : " << i64FrmSeqNum << std::endl;
+				cv::imshow("Adaboost", frame_cpp);
+				cv::imshow("Ann", afterANN);
+				int iKey = cv::waitKey(10);
+				if (iKey == 27)
+					break;
+			}
+		}
+	}
+			destroyAllWindows();
+			system("pause");
+			return 0;
+}

@@ -1,0 +1,115 @@
+#include<opencv2/opencv.hpp>
+#include<iostream>
+using namespace cv;
+using namespace std;
+int main()
+{
+    Mat img1=imread("D:/CodeWork/MyImage/baboon.jpg",0);
+    Mat img2=imread("D:/CodeWork/MyImage/linux.jpg",1);
+    imshow("initial img1",img1);
+    
+    Mat roi=img1(Rect(0,0,img2.cols,img2.rows));
+//分别令像素值为1、0，以及令mask=img2.clone();观察输出结果
+　 Mat mask(roi.rows,roi.cols,roi.depth(),Scalar(1));
+ //Mat mask=imread("D:/CodeWork/MyImage/linux.jpg",0);
+ 
+    img2.copyTo(roi,mask); 
+    imshow("logan img2",img2); 
+    imshow("after mask img1",img1); 
+    waitKey(); 
+return 0; 
+}
+、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、、
+
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+#include <dlib\image_processing\frontal_face_detector.h>
+#include <dlib\gui_widgets.h>
+#include <dlib\image_io.h>
+#include<dlib\opencv.h>
+#include<iostream>
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+
+int main(int argc, char** argv)
+{
+	VideoCapture cap(0);
+	//float radio_ROI_w = 0.35;
+	float radio_ROI_h = 0.35;
+	Mat ps = imread("D:\\5.jpg", 1);
+	Mat mask = imread("D:\\5.jpg",0);
+	//Mat mask = Mat::zeros(ps.cols, ps.rows, CV_8UC1);
+	int x = 0, y = 0, w = 0, h = 0;
+	int ROI_x = 0, ROI_y = 0, ROI_w = 0, ROI_h = 0;
+	frontal_face_detector detector = get_frontal_face_detector();
+	while (1)
+	{
+		Mat frame, faceROI, tmpImg;
+		cap >> frame;
+		frame.copyTo(tmpImg);
+		dlib::cv_image<bgr_pixel> img(frame);
+		std::vector<dlib::rectangle> dets = detector(img);
+		for (int i = 0; i < dets.size(); i++)
+		{
+			x = dets[i].left();
+			y = dets[i].top();
+			w = dets[i].right() - dets[i].left();
+			h = dets[i].bottom() - dets[i].top();
+			if (x < 0)
+				x = 0;
+			if (y < 0)
+				y = 0;
+			if (x + w > img.nc())
+				w = img.nc() - x - 1;
+			if (y + h > img.nr())
+				h = img.nr() - y - 1;
+			ROI_x = x;
+			if (ROI_x < 0)
+				ROI_x = 0;
+
+			ROI_y = y - radio_ROI_h*h;
+			if (ROI_y < 0)
+				ROI_y = 0;
+
+			ROI_w =  w;
+			if (ROI_x + ROI_w > tmpImg.cols)
+			{
+				ROI_w = tmpImg.cols - ROI_x - 1;
+				cout << "First: ROI_x: " << ROI_x << ", ROI_w: " << ROI_w << ", ROI_y: " << ROI_y << ", ROI_h: " << ROI_h << endl;
+			}
+			ROI_h = (1+ radio_ROI_h)*h;
+			if ((ROI_h + ROI_y) > tmpImg.rows)
+			{
+				ROI_h = tmpImg.rows - ROI_y - 1;
+				cout << "Second: ROI_x: " << ROI_x << ", ROI_w: " << ROI_w << ", ROI_y: " << ROI_y << ", ROI_h: " << ROI_h << endl;
+			}
+			resize(ps, ps, Size(ROI_w, ROI_h), 0, 0, INTER_LINEAR);
+			resize(mask, mask, Size(ROI_w, ROI_h), 0, 0, INTER_LINEAR);
+			faceROI = tmpImg(Rect(ROI_x, ROI_y, ROI_w, ROI_h));
+			ps.copyTo(faceROI, mask);
+		}
+		imshow("video", tmpImg);
+		int c = cv::waitKey(1);
+		if (c == 27)
+			return -1;
+		//int delay = 30;暂停
+		//if (delay >= 0 && waitKey(delay) >= 0)
+		//waitKey(0);
+	}
+	return 0;
+}

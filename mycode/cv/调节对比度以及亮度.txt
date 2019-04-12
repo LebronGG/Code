@@ -1,0 +1,100 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+
+#include <fstream>
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define StorageFile                             "C:\\Users\\Administrator\\Desktop\\face1\\dark"
+#define INPUT_TXT_FILE                          "C:\\Users\\Administrator\\Desktop\\face1\\face.txt"
+
+int main(int argc, char** argv)
+{
+	float alpha = 2;
+	float beta = 110;
+	char imageName[200];
+	char timeName[30];
+	int index = 0;
+	int count = 1;
+	SYSTEMTIME st;
+	CString strDate, strTime;
+	const string storagefile = StorageFile;
+	string strFileName;
+
+
+	ifstream inStr(INPUT_TXT_FILE);
+	if (!inStr.is_open())
+	{
+		cout << "read videofile error" << endl;
+		getchar();
+		return -1;
+	}
+	while (std::getline(inStr, strFileName))
+	{
+		if (!strFileName.empty())
+		{
+			Mat src = imread("2.jpg");
+			if (src.empty())
+			{
+				cout << "Complete!" << endl;
+				continue;
+			}
+			GetLocalTime(&st);
+			int year = st.wYear;
+			int month = st.wMonth;
+			int day = st.wDay;
+			int hour = st.wHour;
+			int minute = st.wMinute;
+			int second = st.wSecond;
+			sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+			sprintf_s(imageName, "%s/%s%d%s", storagefile.c_str(), timeName, ++index, ".jpg");
+
+			int height = src.rows;
+			int width = src.cols;
+			Mat dst = Mat::zeros(src.size(), src.type());
+			
+			Mat m1;
+			src.convertTo(m1, CV_32F);
+
+			for (int row = 0; row < height; row++)
+			{
+				for (int col = 0; col < width; col++)
+				{
+					if (src.channels() == 3)
+					{
+						float b = m1.at<Vec3f>(row, col)[0];
+						float g = m1.at<Vec3f>(row, col)[1];
+						float r = m1.at<Vec3f>(row, col)[2];
+
+						dst.at<Vec3b>(row, col)[0] = saturate_cast<uchar>(b*alpha + beta);
+						dst.at<Vec3b>(row, col)[1] = saturate_cast<uchar>(g*alpha + beta);
+						dst.at<Vec3b>(row, col)[2] = saturate_cast<uchar>(r*alpha + beta);
+					}
+					else if (src.channels() == 1)
+					{
+						float v = src.at<uchar>(row, col);
+						dst.at<uchar>(row, col) = saturate_cast<uchar>(v*alpha + beta);
+					}
+				}
+			}
+			imshow("原图", src);
+			imshow("变色",dst);
+			waitKey(0);
+			//imwrite(imageName, dst);
+			cout << "存入个数：" << count++ << endl;
+		}
+	}
+	destroyAllWindows();
+	return 0;
+}

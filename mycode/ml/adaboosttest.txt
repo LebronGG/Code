@@ -1,0 +1,119 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+#include <dlib\image_processing\frontal_face_detector.h>
+#include <dlib\gui_widgets.h>
+#include <dlib\image_io.h>
+#include<dlib\opencv.h>
+#include<iostream>
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+#include <stdio.h>
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define INPUT_TXT_FILE                          "E:\\mine\\test\\bp\\posfortrain.txt"
+#define ADABOOST_MODEL_FILE						"./modelFile/lbp_4kx8k_10.xml"
+
+int main(int argc, char** argv)
+{
+	int sum = 0;
+	int iTurePositive = 0;
+	int iFalsePositive = 0;
+	string strFileName;
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);  // load  Adaboost file
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+
+	ifstream inStr(INPUT_TXT_FILE);
+	if (!inStr.is_open())
+	{
+		cout << "read file error" << endl;
+		getchar();
+		return -1;
+	}
+	while (std::getline(inStr, strFileName))
+	{
+		if (!strFileName.empty())
+		{
+			sum++;
+			Mat frame = imread(strFileName);
+			if (frame.empty())
+			{
+				cout << "Process Current Video Complete!" << endl;
+				break;
+			}
+			Mat  GrayfaceROI;
+			if (frame.channels() == 3)
+				cvtColor(frame, GrayfaceROI, COLOR_BGR2GRAY);
+			else
+				GrayfaceROI = frame;
+			std::vector<cv::Rect> vecObjects;
+			object_cascade.detectMultiScale(GrayfaceROI, vecObjects, 1.1, 1, 0, Size(20, 20), Size(240, 240));
+			Mat temp;
+			frame.copyTo(temp);
+			if (vecObjects.size() >= 1)
+			{
+				iTurePositive++;
+			}
+			else
+			{
+				iFalsePositive++;
+			}
+			/*for (unsigned int i = 0; i < vecObjects.size(); i++)
+			{
+			Rect rect1 = vecObjects[i];
+			int x1, y1, width, height;
+			x1 = (int)(rect1.x - (rect1.width) * 0.0);
+			y1 = (int)(rect1.y - (rect1.height) * 0.0);
+			width = (int)(rect1.width) * 1.0;
+			height = (int)(rect1.height) * 1.0;
+			if (x1 < 0)
+			x1 = 0;
+			if (y1 < 0)
+			y1 = 0;
+			if ((x1 + width) > temp.cols)
+			{
+			width = (int)(temp.cols) - x1 - 1;
+			}
+			if ((y1 + height) > temp.rows)
+			{
+			height = (int)(temp.rows) - y1 - 1;
+			}
+			cv::rectangle(frame, Rect(x1, y1, width, height), Scalar(255, 0, 0), 2);
+			}
+			cv::imshow("mine", frame);
+			int c = waitKey(1);
+			if (c == 27)
+			break;*/
+			cout << "sum:" << sum << endl;
+		}
+	}
+	double recall = (iTurePositive / (double)sum);
+	double falsealarm = (iFalsePositive / (double)sum);
+	std::cout << "sum" << sum << ",True Number: " << iTurePositive << ", Accuracy: " << recall << std::endl;
+	std::cout << "sum" << sum << ",False Number: " << iFalsePositive << ", False radio: " << falsealarm << std::endl;
+	destroyAllWindows();
+	system("pause");
+	return 0;
+}
+
+
+
+

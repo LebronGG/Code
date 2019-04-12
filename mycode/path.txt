@@ -1,0 +1,89 @@
+固化模型的工具
+bazel build tensorflow/python/tools:freeze_graph
+bazel-bin/tensorflow/python/tools/freeze_graph \
+  --input_graph=/tmp/inception_v3_inf_graph.pb \
+  --input_checkpoint=/tmp/checkpoints/inception_v3.ckpt \
+  --input_binary=true --output_graph=/tmp/frozen_inception_v3.pb \
+  --output_node_names=InceptionV3/Predictions/Reshape_1
+  
+查看网络节点内容
+bazel build tensorflow/tools/graph_transforms:summarize_graph
+bazel-bin/tensorflow/tools/graph_transforms/summarize_graph \
+  --in_graph='./model/model.pb'
+
+pb转成tflite文件
+bazel build tensorflow/contrib/lite/toco:toco
+/home/yuping-chen/bazel/tensorflow/bazel-bin/tensorflow/contrib/lite/toco/toco \
+  --input_file=/home/yuping-chen/slim/my_model/frozen_model/inception_v3.pb \
+  --input_format=TENSORFLOW_GRAPHDEF \
+  --output_format=TFLITE \
+  --output_file=/home/yuping-chen/slim/my_model/frozen_model/inception_v3.tflite \
+  --inference_type=FLOAT \
+  --input_type=FLOAT \
+  --input_arrays=input \
+  --output_arrays=InceptionV3/Predictions/Reshape_1 \
+  --input_shapes=1,299,299,3
+
+模型量化--
+bazel build tensorflow/tools/graph_transforms:transform_graph
+
+会删除输入和输出节点之间所有不需要的节点
+bazel-bin/tensorflow/tools/graph_transforms/transform_graph \
+    --in_graph='./model/model.pb' \
+    --out_graph='./model/model-q.pb' \
+    --inputs='image' \
+    --outputs='Convolutional_Pose_Machine/stage_5_out' \
+    --transforms='
+    strip_unused_nodes(type=float, shape="1,192,192,3")
+    remove_nodes(op=Identity, op=CheckNumerics)
+    fold_constants(ignoreError=False)
+    fold_old_batch_norms
+    fold_batch_norms'
+	
+round_weights经过这个脚本的PB文件原本的大小不会改变，
+但会有更多的可利用的重复性，所以压缩成zip包会缩小大约3~4倍的大小
+bazel-bin/tensorflow/tools/graph_transforms/transform_graph \
+    --in_graph='./model/model.pb' \
+    --out_graph='./model/model-q.pb' \
+    --inputs='image' \
+    --outputs='Convolutional_Pose_Machine/stage_5_out' \
+    --transforms='
+    strip_unused_nodes(type=float, shape="192*192")
+    fold_constants(ignore_errors=true)
+	fold_batch_norms
+	fold_old_batch_norms
+	round_weights(num_steps=192)'
+  
+Eight-bit，32位的float 32转成8位的int，慎用
+bazel-bin/tensorflow/tools/graph_transforms/transform_graph \
+    --in_graph='./model/model.pb' \
+    --out_graph='./model/model-q.pb' \
+    --inputs='image' \
+    --outputs='Convolutional_Pose_Machine/stage_5_out' \
+    --transforms='
+    strip_unused_nodes(type=float, shape="1,192,192,3")
+    fold_constants(ignore_errors=true)
+    fold_batch_norms
+    fold_old_batch_norms
+    quantize_weights'
+
+
+	
+从整个文件读到内存中变成内存的映射，这能大量的节省内存带宽以及占用量。
+bazel-bin/tensorflow/contrib/util/convert_graphdef_memmapped_format \
+    --in_graph=model-324000.pb \
+    --out_graph=model-324000-q.pb
+
+label_image(用训练好的模型给测试图片打标签)
+bazel build tensorflow/examples/label_image:label_image
+
+bazel-bin/tensorflow/examples/label_image/label_image \
+  --image='./model/model.pb' \
+  --input_layer='image' \
+  --output_layer='Convolutional_Pose_Machine/stage_5_out' \
+  --graph='./model/model.pb' \
+  --labels='./model/model.pb' \
+  --input_mean=0 \
+  --input_std=299
+
+

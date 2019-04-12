@@ -1,0 +1,147 @@
+#include <opencv2/core/utility.hpp>
+#include <opencv2/tracking.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include<opencv2/opencv.hpp>
+#include <iostream>
+#include <cstring>
+
+
+#include <fstream>
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <stdio.h>
+
+using namespace std;
+using namespace cv;
+
+#define ImgStorage                              "E:/cvtest/tracker/photos"
+#define LabelStorage                            "E:/cvtest/tracker/labels"
+
+bool selectObject = false;
+Point origin;
+Rect selection;
+int trackObject = 0;
+
+void Onmouse(int event, int x, int y, int, void*)
+{
+	if (selectObject)//只有当鼠标左键按下去时才有效，然后通过if里面代码就可以确定所选择的矩形区域selection了    
+	{
+		selection.x = MIN(x, origin.x);//矩形左上角顶点坐标    
+		selection.y = MIN(y, origin.y);
+		selection.width = std::abs(x - origin.x);//矩形宽    
+		selection.height = std::abs(y - origin.y);//矩形高    
+												  //selection &= Rect(0, 0, frame.cols, src.rows);//用于确保所选的矩形区域在图片范围内  
+												  //rectangle(src,selection,Scalar(0,0,255),2);  
+
+	}
+	switch (event)
+	{
+	case CV_EVENT_LBUTTONDOWN:
+		origin = Point(x, y);
+		selection = Rect(x, y, 0, 0);//鼠标刚按下去时初始化了一个矩形区域    
+		selectObject = true;
+		break;
+	case CV_EVENT_LBUTTONUP:
+		selectObject = false;
+		if (selection.width > 0 && selection.height > 0)
+			trackObject = -1;
+		break;
+	}
+}
+
+int main(int argc, char *argv[])
+{
+	const string Storagelabel = LabelStorage;
+	const string Storageimg = ImgStorage;
+	static int framecount = 0;
+	SYSTEMTIME st;
+	char imgName[200];
+	char labelName[200];
+	char timeName[30];
+	namedWindow("tracker");
+	setMouseCallback("tracker", Onmouse, 0);
+	MultiTracker myTracker("KCF");
+	int objectCounter = 0;
+	VideoCapture cap(0);  
+	Mat frame;
+	while (1)
+	{
+		cap >> frame;
+		if (selectObject)
+		{
+			rectangle(frame, selection, Scalar(0, 0, 255), 2, 8, 0);
+		}
+		if (trackObject < 0)
+		{
+			myTracker.add(frame, selection);
+			objectCounter++;//待跟踪目标个数加1  
+			trackObject = 1;
+		}
+		if (trackObject)
+		{
+			vector<Rect2d> r;
+			myTracker.update(frame, r);
+			size_t s = r.size();
+			RNG rng;
+			GetLocalTime(&st);
+			int year = st.wYear;
+			int month = st.wMonth;
+			int day = st.wDay;
+			int hour = st.wHour;
+			int minute = st.wMinute;
+			int second = st.wSecond;
+			sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+			sprintf_s(labelName, "%s/%s%d%s", Storagelabel.c_str(), timeName, framecount, ".txt");
+			sprintf_s(imgName, "%s/%s%d%s", Storageimg.c_str(), timeName, framecount, ".jpg");
+			framecount++;
+			if (framecount > 999)
+				framecount = 0;
+			imwrite(imgName, frame);
+			ofstream file(labelName);
+			float width = frame.cols;
+			float height = frame.rows;
+			cout << s << endl;
+			for (size_t i = 0; i < s; i++)
+			{
+				Scalar scalar = Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
+				rectangle(frame, r[i], scalar, 2, 8, 0);
+				char name[10];
+				sprintf_s(name, "%d", i);
+				putText(frame, name, r[i].tl(), 3, 0.8, Scalar(0, 255, 255), 2, 8, false);
+				float x = r[i].x;
+				float y = r[i].y;
+				float w = r[i].width;
+				float h = r[i].height;
+				x = (2 * x + w) / (2 * width);
+				y = (2 * y + h) / (2 * height);
+				w = w / width;
+				h = h / height;
+				if (i == 0)
+				{
+					for (int j = 0; i < 2; j++)
+					{
+						file << i << " " << x << " " << y << " " << w << " " << h << endl;
+					}
+				}
+				if (i == 1)
+				{
+					for (int j = 0; i < 5; j++)
+					{
+						file << i << " " << x << " " << y << " " << w << " " << h << endl;
+					}
+				}
+			}
+			file.close();
+		}
+		imshow("tracker", frame);
+		if (waitKey(1) == 27)
+		{
+			break;
+		}
+	}
+	return 0;
+}

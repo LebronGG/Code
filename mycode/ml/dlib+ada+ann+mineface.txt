@@ -1,0 +1,156 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+#include <dlib\image_processing\frontal_face_detector.h>
+#include <dlib\gui_widgets.h>
+#include <dlib\image_io.h>
+#include<dlib\opencv.h>
+#include<iostream>
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+
+#define ADABOOST_MODEL_FILE						"./modelFile/facelbp_4kx10k_10.xml"
+#define ANN_MODEL_FILE                              "./modelFile/BP_TPLBP_HOG_4layer.xml"
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+
+int main(int argc, char** argv)
+{
+	Mat frame, faceROI, tmpImg, GrayfaceROI, xuROI;
+	int x = 0, y = 0, w = 0, h = 0; // the dlib face location
+	int ROI_x = 0, ROI_y = 0, ROI_w = 0, ROI_h = 0, ROI_h_p = 0;
+	float radio_ROI = 0.2;
+	float radio_h = 1.0;
+	frontal_face_detector detector = get_frontal_face_detector();
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+	Ptr<ANN_MLP> ann = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE); // load ANN model File
+	if (ann->empty())
+	{
+		std::cout << "Load ANN model File Error" << std::endl;
+		getchar();
+		return -1;
+	}
+	VideoCapture cap(0);
+	while (1)
+	{
+		cap >> frame;
+		frame.copyTo(tmpImg);
+		dlib::cv_image<bgr_pixel> img(frame);
+		std::vector<dlib::rectangle> dets = detector(img);
+		cout << "Face Num: " << dets.size() << endl;;
+		for (int i = 0; i < dets.size(); i++)
+		{
+			x = dets[i].left();
+			y = dets[i].top();
+			w = dets[i].right() - dets[i].left();
+			h = dets[i].bottom() - dets[i].top();
+			if (x < 0)
+				x = 0;
+			if (y < 0)
+				y = 0;
+			if (x + w > img.nc())
+				w = img.nc() - x - 1;
+			if (y + h > img.nr())
+				h = img.nr() - y - 1;
+
+			ROI_x = x - radio_ROI*w/2;
+			if (ROI_x < 0)
+				ROI_x = 0;
+
+			ROI_y = y - radio_ROI*h/2;
+			if (ROI_y < 0)
+				ROI_y = 0;
+
+			ROI_w = (1 + radio_ROI)*w;
+			if (ROI_x + ROI_w > tmpImg.cols)
+			{
+				ROI_w = tmpImg.cols - ROI_x - 1;
+			}
+
+			ROI_h = (1 + radio_ROI)*h;
+			if ((ROI_h + ROI_y) > tmpImg.rows)
+			{
+				ROI_h = tmpImg.rows - ROI_y - 1;
+			}
+
+			ROI_h_p = ROI_h*radio_h;
+			if ((ROI_h_p + ROI_y) > tmpImg.rows)
+			{
+				ROI_h_p = tmpImg.rows - ROI_y - 1;
+			}
+	
+			cv::rectangle(frame, Rect(x, y, w, h), Scalar(255, 0, 0), 2); // rectangle the detect ROI
+			
+			xuROI = tmpImg(Rect(ROI_x, ROI_y, ROI_w, ROI_h_p));
+
+			if (xuROI.channels() == 3)
+				cvtColor(xuROI, GrayfaceROI, COLOR_BGR2GRAY);
+			else
+				GrayfaceROI = xuROI;
+			std::vector<cv::Rect> vecObjects;
+			object_cascade.detectMultiScale(GrayfaceROI, vecObjects, 1.1, 1, 0, Size(18, 30), Size(144, 240));
+			cv::rectangle(frame, Rect(ROI_x, ROI_y, ROI_w, ROI_h_p), Scalar(0, 255, 0), 2);
+			for (unsigned int i = 0; i < vecObjects.size(); i++)
+			{
+				Rect rect1 = vecObjects[i];
+				int x1, y1, width, height;
+				x1 = (int)(rect1.x - (rect1.width) * 0.0);
+				y1 = (int)(rect1.y - (rect1.height) * 0.0);
+				width = (int)(rect1.width) * 1.0;
+				height = (int)(rect1.height) * 1.0;
+				if (x1 < 0)
+					x1 = 0;
+				if (y1 < 0)
+					y1 = 0;
+				if ((x1 + width) > xuROI.cols)
+				{
+					width = (int)(xuROI.cols) - x1 - 1;
+				}
+				if ((y1 + height) > xuROI.rows)
+				{
+					height = (int)(xuROI.rows) - y1 - 1;
+				}
+				cv::Mat imagexu = xuROI(Rect(x1, y1, width, height));
+				Mat extractRoi;
+				if (imagexu.channels() == 3)
+					cv::cvtColor(imagexu, extractRoi, COLOR_BGR2GRAY);
+				else
+					extractRoi = imagexu;
+				cv::resize(extractRoi, extractRoi, Size(36, 60), INTER_CUBIC);
+				cv::Mat feature = ImageFeatureLib::Get_TPLBP_Hog_Grid(extractRoi, 9, 4, 4, 4, 4);
+				cv::Mat result;
+				ann->predict(feature, result);
+				float* pfRow = result.ptr<float>(0);
+				if (pfRow[0] > 0.5)
+				{
+					cv::rectangle(tmpImg, Rect(ROI_x + x1, ROI_y + y1, width, height), Scalar(0, 255, 0), 2);
+				}
+			}
+		}
+		imshow("face", frame);
+		imshow("mineface", tmpImg);
+		int c = cv::waitKey(1);
+		if (c == 27)
+			return -1;
+	}
+	return 0;
+}

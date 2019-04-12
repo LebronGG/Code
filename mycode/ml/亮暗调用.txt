@@ -1,0 +1,242 @@
+#include "objdetect/objdetect.hpp"
+#include <opencv2/objdetect/objdetect_c.h>
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+
+#include <fstream>
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+float probDarkOrBright(Mat&);
+Mat GrayConv(Mat&);
+#define ADABOOST_MODEL_FILE_Dark			   "./modelFile/faceModelFile0907_6kX9k_HAAR_25_1.xml"  //
+#define ADABOOST_MODEL_FILE_Bright			   "./modelFile/faceModelFile0928_7kX10k_19.xml"  // faceModelFile1008_8kX13k_18, faceModelFile0928_7kX10k_19
+#define ANN_MODEL_FILE_Large           "./modelFile/boxModel_TPLBP_Hog_3layer0808_99.xml"
+
+#define ANN_MODEL_FILE_Small           "./modelFile/faceModel_lbp_Hog_3layer0926_40X40.xml" //faceModel_lbp_Hog_3layer0913_60X60, faceModel_lbp_Hog_3layer0831_40X40
+#define ANN_MODEL_FILE_Small2          "./modelFile/faceModel_lbp_Hog_3layer0926_40X40.xml"
+#define Eye_Ann_Model_File       "./modelFile/eyesModel_lbp_Hog_3layer1109.xml"      
+
+int faceradio = 0;
+int main(int argc, char** argv)
+{
+	float face_thresh = 0.8; 
+	float eye_thresh = 0.8;
+	float face_resize_radio = 1.0;
+	float prediction_radio = 0.7;
+	float score = 0;
+	float probDark = 0;
+	float faceROI_Resize = 0.0; // face 0.08, fist 0.0
+	char darkOrBrightText[128] = "\0";
+	char scoreText[128] = "\0";
+	char FPSText[128] = "\0";
+	char noseMouthScoreText[128] = "\0";
+
+	Ptr<ANN_MLP> ann = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE_Small); // load ANN model File 
+	if (ann->getLayerSizes().empty())
+	{
+		std::cout << "Load File: " << ANN_MODEL_FILE_Small << " Error" << std::endl;
+		getchar();
+		return -1;
+	}
+
+	Ptr<ANN_MLP> ann2 = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE_Small2); // load ANN model File 
+	if (ann2->getLayerSizes().empty())
+	{
+		std::cout << "Load File: " << ANN_MODEL_FILE_Small2 << " Error" << std::endl;
+		getchar();
+		return -1;
+	}
+
+	CascadeClassifier object_cascade_Dark, object_cascade_Bright;
+	object_cascade_Dark.load(ADABOOST_MODEL_FILE_Dark);  // load  Adaboost file
+	if (object_cascade_Dark.empty())
+	{
+		std::cout << "Load File: " << ADABOOST_MODEL_FILE_Dark << " Error!" << std::endl;
+		getchar();
+		return -1;
+	}
+	object_cascade_Bright.load(ADABOOST_MODEL_FILE_Bright);  // load  Adaboost file
+	if (object_cascade_Bright.empty())
+	{
+		std::cout << "Load File: " << ADABOOST_MODEL_FILE_Bright << " Error!" << std::endl;
+		getchar();
+		return -1;
+	}
+
+	Ptr<ANN_MLP> Eye = Algorithm::load<ANN_MLP>(Eye_Ann_Model_File); // load ANN model File 
+	if (Eye->getLayerSizes().empty())
+	{
+		std::cout << "Load File: " << Eye_Ann_Model_File << " Error" << std::endl;
+		getchar();
+		return -1;
+	}
+
+	VideoCapture cap("D:\\video\\8\\Video 37.wmv"); //  D:\\video\\5\\Video 30.wmv              D:\video\8\Video 37.wmv
+	cv::Mat frame_cpp;
+	while (1)
+	{
+		cap >> frame_cpp;
+
+		if (frame_cpp.empty())
+		{
+			std::cout << "Read frame Error!" << std::endl;
+			destroyAllWindows();
+			getchar();
+			return -1;
+		}
+		Mat frame_cpp_r;
+		cv::resize(frame_cpp, frame_cpp, Size(frame_cpp.cols * face_resize_radio, frame_cpp.rows * face_resize_radio));
+		Mat afterANN;
+		frame_cpp.copyTo(afterANN);
+		Mat GrayFrame = GrayConv(frame_cpp);
+		double t1 = cv::getTickCount();
+		vector<Rect> vecObjects;
+		probDark = probDarkOrBright(GrayFrame);
+		double t2 = cv::getTickCount();
+		double timestart = (double)getTickCount();
+		if (probDark > 0.2 && probDark <= 0.75)
+		{
+			faceROI_Resize = 0.08;
+			std::sprintf(darkOrBrightText, "%s: %.2f", "Normal", probDark);
+			object_cascade_Dark.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, Size(20, 20), Size(200, 200));
+		}
+		else if (probDark > 0.75)
+		{
+			faceROI_Resize = 0.08;
+			std::sprintf(darkOrBrightText, "%s: %.2f", "Dark", probDark);
+			object_cascade_Dark.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, Size(20, 20), Size(200, 200));
+		}
+		else
+		{
+			faceROI_Resize = 0.08;
+			std::sprintf(darkOrBrightText, "%s: %.2f", "Bright", (1 - probDark));
+			object_cascade_Bright.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, Size(20, 20), Size(200, 200));
+		}
+		Mat temp, eye;
+		frame_cpp.copyTo(temp);
+		for (unsigned int i = 0; i < vecObjects.size(); i++)
+		{
+			Rect rect = vecObjects[i];
+			Point point1, point2;
+			point1.x = rect.x;
+			point1.y = rect.y;
+			point2.x = rect.x + rect.width;
+			point2.y = rect.y + rect.height;
+			int x, big_x, y, big_y, width, big_width, height, big_height;
+			x = (int)(rect.x - (rect.width) * 0.0);
+			y = (int)(rect.y - (rect.height) * 0.0);
+			width = (int)(rect.width) * 1.0;
+			height = (int)(rect.height) * 1.0;
+
+			if (x < 0)
+				x = 0;
+			if (y < 0)
+				y = 0;
+			if ((x + width) > temp.cols)
+				width = (int)(temp.cols) - x;
+			if ((y + height) > temp.rows)
+				height = (int)(temp.rows) - y;
+
+			big_x = x;
+			big_y = y;
+			big_width = width;
+			big_height = (int)(height / 2);
+
+			if (big_x < 0)
+				big_x = 0;
+			if (big_y < 0)
+				big_y = 0;
+			if ((big_x + big_width) > temp.cols)
+				big_width = (int)(temp.cols) - big_x;
+			if ((big_y + big_height) > temp.rows)
+				big_height = (int)(temp.rows) - big_y;
+
+			cv::Mat imageROI = temp(Rect(x, y, width, height));
+			cv::Mat big_ImageROI = temp(Rect(big_x, big_y, big_width, big_height));
+			cv::rectangle(frame_cpp, Rect(x, y, width, height), Scalar(0, 0, 255), 2);
+			cv::Mat extractRoi = GrayConv(imageROI);
+			cv::resize(extractRoi, extractRoi, Size(40, 40), INTER_CUBIC);
+			cv::Mat feature = ImageFeatureLib::Get_TPLBP_Hog_Grid(extractRoi, 9, 4, 4, 4, 4);
+			cv::Mat result, result2;
+			ann->predict(feature, result);
+
+			float* pfRow = result.ptr<float>(0);
+			score = pfRow[0];
+			std::sprintf(scoreText, "%.2f", MIN(MAX(0, score), 1.0));
+			if (score > face_thresh)
+			{   
+				cv::cvtColor(big_ImageROI, big_ImageROI, COLOR_BGR2GRAY);
+				cv::resize(big_ImageROI, big_ImageROI, Size(40, 20), INTER_CUBIC);
+				cv::Mat noseMouthFeature = ImageFeatureLib::Get_TPLBP_Hog_Grid(big_ImageROI, 9, 4, 4, 4, 4);
+				cv::Mat noseMouthResult;
+				Eye->predict(noseMouthFeature, noseMouthResult);
+				float EyeScore = noseMouthResult.ptr<float>(0)[0];
+				if (EyeScore > 0.7)
+				{
+					cv::putText(afterANN, scoreText, Point(big_x, big_y), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 0, 255), 2);
+					cv::rectangle(afterANN, Rect(big_x, big_y, big_width, big_height), Scalar(0, 255, 0), 4);
+					cv::rectangle(afterANN, Rect(x, y, width, height), Scalar(0, 0, 255), 2);
+				}	
+			}	
+		}
+		double Time = ((double)getTickCount() - timestart) / getTickFrequency();
+		int fps = (int)1 / Time;
+		std::sprintf(FPSText, "%s: %d", "FPS", fps);
+		cv::putText(afterANN, FPSText, Point(20, 50), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 10, 200), 2);
+		cv::putText(frame_cpp, darkOrBrightText, Point(30, 25), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 10, 200), 2);
+		cv::putText(afterANN, darkOrBrightText, Point(20, 30), FONT_HERSHEY_PLAIN, 2.0, Scalar(0, 10, 200), 2);
+		cv::imshow("Bounding Boxes", frame_cpp);
+		cv::imshow("Faces", afterANN);
+		int iKey = cv::waitKey(1);
+		if (iKey == 27)
+			break;
+	}
+	cv::destroyAllWindows();
+	return 0;
+}
+
+float probDarkOrBright(Mat& grayFrame)
+{
+	assert(!grayFrame.empty());
+	if (grayFrame.channels() == 3)
+		cvtColor(grayFrame, grayFrame, COLOR_BGR2GRAY);
+	int dark_sum = 0;
+	int num_cols = grayFrame.cols;
+	int num_rows = (grayFrame.rows * 2) / 3;
+
+	//访问像素一
+	for (int i = 0; i < num_rows; i++)
+	{
+		for (int j = 0; j < num_cols; j++)
+		{
+			if (grayFrame.at<uchar>(i, j) < 128)
+				dark_sum++;
+		}
+	}
+
+
+	float probDark = dark_sum / (float)(num_rows * num_cols);
+	return probDark;
+}
+
+Mat GrayConv(Mat& Image)
+{
+	Mat GrayImage;
+	if (Image.channels() == 3)
+		cvtColor(Image, GrayImage, COLOR_BGR2GRAY);
+	else
+		GrayImage = Image;
+	return GrayImage;
+}
+

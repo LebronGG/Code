@@ -1,0 +1,24 @@
+share file Visualization
+vmhgfs-fuse .host:/  /mnt/hgfs/
+
+rename
+mv a.txt b.txt
+
+make file
+mkdir abc
+
+touch abc.sh
+
+1
+export PATH=$PATH:/opt/software/node-v8.9.3-linux-x64/bin/node
+//export使用方法为 export PATH=$PATH:路径1:路径2:路径n;$PATH为系统变量,表示之前所有设置的路径，如果不加则之前所有的路径都失效。所以必须加上。
+2
+vi /etc/profile
+在里面加入:
+export PATH=$PATH:/opt/software/node-v8.9.3-linux-x64/bin/node
+//如果是修改用户主目录下的.bash_profile，则添加的环境变量只对该用户有效，修改/etc/profile对所有用户都生效。也可以修改/etc/rc.local文件和/root/.bashrc文件。
+//修改好配置文件后执行source /etc/profile 或者 source /root/.bashrc使配置文件生效
+
+查看环境变量
+echo $PATH
+env

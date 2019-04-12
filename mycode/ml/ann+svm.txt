@@ -1,0 +1,194 @@
+#include <opencv2/core/core.hpp>
+#include <opencv.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/ml/ml.hpp>
+#include "ImageFeatrueExtract.h"
+
+#include <iostream>
+#include <string>
+#include <fstream>
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <stdio.h>
+
+#define WIDTH	36
+#define HEIGHT	60
+#define LGRIDX	4
+#define LGRIDY	4
+#define HOGBINNUM 9
+#define HOGGRIDX 4
+#define HOGGRIDY 4
+
+#define posfortrain       "E:\\mine\\test\\bp\\posfortrain.txt"
+#define negfortrain       "E:\\mine\\test\\bp\\negfortrain.txt"
+#define posfortest        "E:\\mine\\test\\bp\\posfortest.txt"
+#define negfortest        "E:\\mine\\test\\bp\\negfortest.txt"
+
+#define ANN
+
+using namespace std;
+using namespace cv;
+using namespace ml;
+
+int main(int argc, char** argv)
+{
+	try {
+		cout << "train process" << endl;
+		Mat matposfortrain, matnegfortrain, matallfortrain;
+		int ip = 0, in = 0;
+		//pos样本预处理
+		ImageFeatureLib::Read_List_Get_TPLBP_Hog_Grid(posfortrain, matposfortrain, ip, false, true, 2, 36, 36, HOGBINNUM, HOGGRIDX, HOGGRIDY, LGRIDX, LGRIDY);
+		int iposcount = matposfortrain.rows;
+		int inegcount = matnegfortrain.rows;
+		matallfortrain.push_back(matposfortrain);
+		matposfortrain.release();
+		cout << "pos file done" << endl;
+		//neg样本预处理
+		ImageFeatureLib::Read_List_Get_TPLBP_Hog_Grid(negfortrain, matnegfortrain, in, false, true, 2, 36, 36, HOGBINNUM, HOGGRIDX, HOGGRIDY, LGRIDX, LGRIDY);
+		matallfortrain.push_back(matnegfortrain);
+		matnegfortrain.release();
+		cout << "neg file done" << endl;
+		///////////////////////////////////////////////////////////////////////////
+		int iallcount = matallfortrain.rows;
+		Mat matlabels(iallcount, 2, CV_32FC1, Scalar(0));//这一句什么意思
+		for (int irow = 0; irow < iposcount; irow++)//定义正样本label为10
+		{
+			matlabels.ptr<float>(irow)[0] = 1;
+			matlabels.ptr<float>(irow)[1] = 0;
+		}
+		for (int irow = iposcount; irow < iallcount; irow++)//定义负样本label为01
+		{
+			matlabels.ptr<float>(irow)[0] = 0;
+			matlabels.ptr<float>(irow)[1] = 1;
+		}
+
+#ifdef ANN
+		//bp神经网络创建、设参
+		Ptr<ml::ANN_MLP> ann = ml::ANN_MLP::create();
+		int inputlayer = matallfortrain.cols;
+		Mat matLayerSize = (Mat_<int>(1, 3) << inputlayer, 64, 2);//网络层数
+		ann->setLayerSizes(matLayerSize);
+		ann->setActivationFunction(ml::ANN_MLP::SIGMOID_SYM, 1, 1);
+		ann->setTrainMethod(ml::ANN_MLP::BACKPROP, 0.0001);
+		ann->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER + TermCriteria::EPS, 300, FLT_EPSILON));
+		Ptr<ml::TrainData> tdata = ml::TrainData::create(matallfortrain, ml::ROW_SAMPLE, matlabels);//创建训练数据
+		cout << "begin training" << endl;
+		ann->train(tdata);
+		ann->save("BP_TPLBP_HOG_3layer.xml");
+		cout << "save ann mode success" << endl;
+		////////////////////////////////////////////////////
+#else
+		//svm神经网络创建、设参
+		Ptr<ml::SVM> svm = SVM::create();
+		svm->setType(SVM::C_SVC);
+		svm->setKernel(SVM::LINEAR);
+		svm->setTermCriteria(TermCriteria(TermCriteria::MAX_ITER, 100, 1e-6));
+		Ptr<ml::TrainData> tdata = ml::TrainData::create(matallfortrain, ml::ROW_SAMPLE, matlabels);
+		svm->train(tdata);
+		svm->save("SVM_TPLBP_HOG_3layer.xml");
+		cout << "save svm mode success" << endl;
+#endif
+
+		//训练样本的阈值范围测量
+		cout << "test stage" << endl;
+		int iPosPosTrain = 0, iPosNegTrain = 0, iNegPosTrain = 0, iNegNegTrain = 0;
+		for (int iRow = 0; iRow < iposcount; iRow++)
+		{
+			Mat matTmp = matallfortrain.row(iRow);
+			Mat matResult;
+#ifdef ANN
+			ann->predict(matTmp, matResult);
+#else
+			svm->predict(matTmp, matResult);
+#endif 
+			float response = matResult.ptr<float>(0)[0];
+			if (response > 0.75)
+				iPosPosTrain++;
+			else
+				iPosNegTrain++;
+		}
+		for (int iRow = iposcount; iRow < iallcount; iRow++)
+		{
+			Mat matTmp = matallfortrain.row(iRow);
+			Mat matResult;
+#ifdef ANN
+			ann->predict(matTmp, matResult);
+#else
+			svm->predict(matTmp, matResult);
+#endif 
+			float response = matResult.ptr<float>(0)[0];
+			if (response > 0.75)
+				iNegPosTrain++;
+			else
+				iNegNegTrain++;
+		}
+		matallfortrain.release();
+		double dfPosPrecisionTrain = (double)iPosPosTrain / iposcount;
+		double dfNegPrecisionTrain = (double)iNegNegTrain / inegcount;
+		double dfAllPrecisionTrain = (double)(iPosPosTrain + iNegNegTrain) / (iposcount + inegcount);
+		cout << endl;
+		cout << "train:" << "iPosPosTrain: " << iPosPosTrain << " " << "iPosNegTrain: " << iPosNegTrain << " " << "iNegPosTrain: " << iNegPosTrain << " " << "iNegNegTrain: " << iNegNegTrain << endl;
+		cout << "train dfPosPrecision:" << dfPosPrecisionTrain << endl;
+		cout << "train dfNegPrecision:" << dfNegPrecisionTrain << endl;
+		cout << "train dfAllPrecision:" << dfAllPrecisionTrain << endl;
+		//测试样本的阈值范围测量
+		Mat matposfortest, matnegfortest;
+		int itp = 0;
+		int itn = 0;
+		ImageFeatureLib::Read_List_Get_TPLBP_Hog_Grid(posfortest, matnegfortrain, itp, false, true, 2, 36, 36, HOGBINNUM, HOGGRIDX, HOGGRIDY, LGRIDX, LGRIDY);
+		ImageFeatureLib::Read_List_Get_TPLBP_Hog_Grid(negfortest, matnegfortrain, itn, false, true, 2, 36, 36, HOGBINNUM, HOGGRIDX, HOGGRIDY, LGRIDX, LGRIDY);
+		int iposcountfortest = matposfortest.rows;
+		int  inegcountfortest = matposfortest.rows;
+		cout << "predict stage" << endl;
+		int iPosPosTest = 0, iPosNegTest = 0, iNegPosTest = 0, iNegNegTest = 0;
+		for (int iRow = 0; iRow < iposcountfortest; iRow++)
+		{
+			Mat matTmp = matposfortest.row(iRow);
+			Mat matResult;
+#ifdef ANN
+			ann->predict(matTmp, matResult);
+#else
+			svm->predict(matTmp, matResult);
+#endif 
+			float response = matResult.ptr<float>(0)[0];
+			if (response > 0.75)
+				iPosPosTest++;
+			else
+				iPosNegTest++;
+		}
+		for (int iRow = 0; iRow < inegcountfortest; iRow++)
+		{
+			Mat matTmp = matnegfortest.row(iRow);
+			Mat matResult;
+#ifdef ANN
+			ann->predict(matTmp, matResult);
+#else
+			svm->predict(matTmp, matResult);
+#endif 
+			float response = matResult.ptr<float>(0)[0];
+			if (response > 0.75)
+				iNegPosTest++;
+			else
+				iNegNegTest++;
+		}
+		double dfPosPrecisionTest = (double)iPosPosTest / iposcountfortest;
+		double dfNegPrecisionTest = (double)iNegNegTest / inegcountfortest;
+		double dfAllPrecisionTest = (double)(iPosPosTest + iNegNegTest) / (iposcountfortest + inegcountfortest);
+		cout << endl;
+		cout << "test:" << "iPosPosTest: " << iPosPosTest << " " << "iPosNegTest: " << iPosNegTest << " " << "iNegPosTest: " << iNegPosTest << " " << "iNegNegTest: " << iNegNegTest << endl;
+		cout << "test dfPosPrecision:" << dfPosPrecisionTest << endl;
+		cout << "test dfNegPrecision:" << dfNegPrecisionTest << endl;
+		cout << "test dfAllPrecision:" << dfAllPrecisionTest << endl;
+		system("pause");
+	}
+	catch (Exception &e)
+	{
+		cout << e.what() << endl;
+		system("pause");
+	}
+	return 0;
+}

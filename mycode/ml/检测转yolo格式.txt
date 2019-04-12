@@ -1,0 +1,201 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+#include <dlib\image_processing\frontal_face_detector.h>
+#include <dlib\gui_widgets.h>
+#include <dlib\image_io.h>
+#include<dlib\opencv.h>
+
+#include<iostream>
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+#include <stdio.h>
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define ADABOOST_MODEL_FILE						"./modelFile/xuModelFile1121_3kX6k_11.xml"      
+#define ANN_MODEL_FILE                          "./modelFile/hushModel_TPLBP_Hog_3layer1128.xml"
+#define INPUT_TXT_FILE                          "xu.txt"
+#define LabelStorage                            "E:/cvtest/video/labels"
+#define ImgStorage                              "E:/cvtest/video/photo"
+
+int main(int argc, char** argv)
+{
+	ofstream file;
+	int x, y, w, h, x1, y1, w1, h1, width, height;
+	frontal_face_detector detector = get_frontal_face_detector();    //load dlib
+
+	Ptr<ANN_MLP> ann = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE); // load ANN model File 
+	if (ann->empty())
+	{
+		std::cout << "Load ANN model File Error" << std::endl;
+		getchar();
+		return -1;
+	}
+
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);  // load  Adaboost file
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+	cv::Mat frame_cpp;
+	cv::Mat dlibimg;
+	cv::Mat GrayFrame;
+	const string Storagelabel = LabelStorage;
+	const string Storageimg = ImgStorage;
+	SYSTEMTIME st;
+	char imgName[200];
+	char labelName[200];
+	char timeName[30];
+	string strFileName;
+	int framecount = 0;
+
+	ifstream inStr(INPUT_TXT_FILE);
+	if (!inStr.is_open())
+	{
+		cout << "read file error" << endl;
+		getchar();
+		return -1;
+	}
+	while (std::getline(inStr, strFileName))
+	{
+		if (!strFileName.empty())
+		{
+			//VideoCapture cap(strFileName);
+			VideoCapture cap("D:/video/xu/Video 11.wmv");
+			Mat frame_cpp;
+			while (1)
+			{
+				cap >> frame_cpp;
+				frame_cpp.copyTo(dlibimg);
+				if (frame_cpp.empty())
+				{
+					std::cout << "Read frame Error!" << std::endl;
+					break;
+				}
+				dlib::cv_image<bgr_pixel> img(dlibimg);
+				std::vector<dlib::rectangle> dets = detector(img);
+
+				if (frame_cpp.channels() == 3)
+					cvtColor(frame_cpp, GrayFrame, COLOR_BGR2GRAY);
+				else
+					GrayFrame = frame_cpp;
+				std::vector<Rect> vecObjects;
+				std::vector<Rect> vecend;
+				object_cascade.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, Size(36, 60), Size(180, 300));
+				for (unsigned int i = 0; i < vecObjects.size(); i++)
+				{
+					Rect rect = vecObjects[i];
+					x = (int)(rect.x - (rect.width) * 0.0);
+					y = (int)(rect.y - (rect.height) * 0.0);
+					w = (int)(rect.width) * 1.0;
+					h = (int)(rect.height) * 1.0;
+
+					if (x < 0)
+						x = 0;
+					if (y < 0)
+						y = 0;
+					if ((x + w) > frame_cpp.cols)
+						w = (int)(frame_cpp.cols) - x;
+					if ((y + h) > frame_cpp.rows)
+						h = (int)(frame_cpp.rows) - y;
+					cv::Mat imageROI = GrayFrame(Rect(x, y, w, h));
+					if (imageROI.channels() == 3)
+						cv::cvtColor(imageROI, imageROI, COLOR_BGR2GRAY);
+					cv::resize(imageROI, imageROI, Size(36, 60), INTER_CUBIC);
+					cv::Mat feature = ImageFeatureLib::Get_TPLBP_Hog_Grid(imageROI, 9, 4, 4, 4, 4);
+					cv::Mat result;
+					ann->predict(feature, result);
+					float* pfRow = result.ptr<float>(0);
+					if (pfRow[0] > 0.75)
+					{
+						vecend.push_back(vecObjects[i]);
+					}
+				}
+				if ((vecend.size() > 0) || (dets.size() > 0))
+				{
+					width = frame_cpp.cols;
+					height = frame_cpp.rows;
+					GetLocalTime(&st);
+					int year = st.wYear;
+					int month = st.wMonth;
+					int day = st.wDay;
+					int hour = st.wHour;
+					int minute = st.wMinute;
+					int second = st.wSecond;
+					sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+					sprintf_s(labelName, "%s/%s%d%s", Storagelabel.c_str(), timeName, framecount, ".txt");
+					sprintf_s(imgName, "%s/%s%d%s", Storageimg.c_str(), timeName, framecount, ".jpg");
+					framecount++;
+					if (framecount > 999)
+						framecount = 0;
+					if (framecount % 5 == 0)
+					{
+						//imwrite(imgName, frame_cpp);
+						ofstream file(labelName);
+						for (unsigned int i = 0; i < dets.size(); i++)
+						{
+							x = dets[i].left();
+							y = dets[i].top();
+							w = dets[i].right() - dets[i].left();
+							h = dets[i].bottom() - dets[i].top();
+							if (x < 0)
+								x = 0;
+							if (y < 0)
+								y = 0;
+							if (x + w > img.nc())
+								w = img.nc() - x - 1;
+							if (y + h > img.nr())
+								h = img.nr() - y - 1;
+							//cv::rectangle(frame_cpp, Rect(x, y, w, h), Scalar(255, 0, 0), 2);
+							cout << "0 " << (float)(2 * x + w) / (2 * width) << " " << (float)(2 * y + h) / (2 * height) << " " << (float)(w) / width << " " << (float)(h) / height << endl;
+							for (int j = 0; j < 2; j++)
+							{
+								file << "0 " << (float)(2 * x + w) / (2 * width) << " " << (float)(2 * y + h) / (2 * height) << " " << (float)(w) / width << " " << (float)(h) / height << endl;
+							}
+						}
+						for (unsigned int i = 0; i < vecend.size(); i++)
+						{
+
+							Rect rect = vecend[i];
+							x1 = (int)(rect.x - (rect.width) * 0.0);
+							y1 = (int)(rect.y - (rect.height) * 0.0);
+							w1 = (int)(rect.width) * 1.0;
+							h1 = (int)(rect.height) * 1.0;
+							if (x1 < 0)
+								x1 = 0;
+							if (y1 < 0)
+								y1 = 0;
+							if ((x1 + w) > frame_cpp.cols)
+								w1 = (int)(frame_cpp.cols) - x1;
+							if ((y1 + h1) > frame_cpp.rows)
+								h1 = (int)(frame_cpp.rows) - y1;
+							//cv::rectangle(frame_cpp, Rect(x1, y1, w1, h1), Scalar(0, 255, 0), 2);
+							cout << "1 " << (float)(2 * x1 + w1) / (2 * width) << " " << (float)(2 * y1 + h1) / (2 * height) << " " << (float)(w1) / width << " " << (float)(h1) / height << endl;
+							for (int j = 0; j < 16; j++)
+							{
+								file << "1 " << (float)(2 * x1 + w1) / (2 * width) << " " << (float)(2 * y1 + h1) / (2 * height) << " " << (float)(w1) / width << " " << (float)(h1) / height << endl;
+							}
+						}
+					}
+					file.close();
+				}
+			}
+		}
+	}
+	return 0;
+}
+

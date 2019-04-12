@@ -1,0 +1,142 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+
+#include <fstream>
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define ADABOOST_MODEL_FILE						"./modelFile/xuModelFile1121_3kX6k_11.xml"      
+#define ANN_MODEL_FILE                          "./modelFile/hushModel_TPLBP_Hog_3layer1128.xml"
+
+vector<Rect> AdaAnn(CascadeClassifier object_cascade, Ptr<ANN_MLP> ann, Mat frame, float threshold, Size size);
+Mat DrawFrame(Mat frame, vector<Rect> vecObjects);
+
+int main(int argc, char** argv)
+{
+	Ptr<ANN_MLP> ann = Algorithm::load<ANN_MLP>(ANN_MODEL_FILE); // load ANN model File 
+	if (ann->empty())
+	{
+		std::cout << "Load ANN model File Error" << std::endl;
+		getchar();
+		return -1;
+	}
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);  // load  Adaboost file
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+	VideoCapture cap(0);
+	cv::Mat frame_cpp;
+	if (!cap.isOpened())
+	{
+		cout << "Couldn't Open Cam!" << endl;
+		getchar();
+		return -1;
+	}
+	while (1) {
+		cap >> frame_cpp;
+		if (frame_cpp.empty())
+		{
+			std::cout << "Read frame Error!" << std::endl;
+			cv::destroyAllWindows();
+			return -1;
+		}
+		double timestart = (double)getTickCount();
+		vector<Rect> vecObjects = AdaAnn(object_cascade, ann, frame_cpp, 0.9,Size(36,60));
+
+		double nTime = ((double)getTickCount() - timestart) / getTickFrequency();
+		Mat frame = DrawFrame(frame_cpp, vecObjects);
+		int fps = (int)(1 / nTime);
+		cout << "TIME:" << nTime * 1000 << "ms" << "   FPS:" << fps << endl;
+		std::stringstream ss;
+		ss << fps;
+		cv::putText(frame, ss.str() + "FPS",
+			cv::Point(20, 45), 4, 1, cv::Scalar(255, 255, 255));
+		cv::imshow("adaboost", frame);
+		if (waitKey(1) == 27)
+			break;
+	}
+	cv::destroyAllWindows();
+	return 0;
+}
+
+vector<Rect> AdaAnn(CascadeClassifier object_cascade, Ptr<ANN_MLP> ann, Mat frame, float threshold,Size size)
+{
+	Mat GrayFrame;
+	int x, y, w, h;
+	if (frame.channels() == 3)
+		cvtColor(frame, GrayFrame, COLOR_BGR2GRAY);
+	else
+		GrayFrame = frame;
+	vector<Rect> vecObjects, vecend;
+	double timestart = (double)getTickCount();
+	object_cascade.detectMultiScale(GrayFrame, vecObjects, 1.1, 1, 0, size, Size(size.width*5,size.height*5));
+	for (unsigned int i = 0; i < vecObjects.size(); i++)
+	{
+		Rect rect = vecObjects[i];
+		x = (int)(rect.x - (rect.width) * 0.0);
+		y = (int)(rect.y - (rect.height) * 0.0);
+		w = (int)(rect.width) * 1.0;
+		h = (int)(rect.height) * 1.0;
+
+		if (x < 0)
+			x = 0;
+		if (y < 0)
+			y = 0;
+		if ((x + w) > frame.cols)
+			w = (int)(frame.cols) - x;
+		if ((y + h) > frame.rows)
+			h = (int)(frame.rows) - y;
+		cv::Mat imageROI = frame(Rect(x, y, w, h));
+		if (imageROI.channels() == 3)
+			cv::cvtColor(imageROI, imageROI, COLOR_BGR2GRAY);
+		cv::resize(imageROI, imageROI, size, INTER_CUBIC);
+		cv::Mat feature = ImageFeatureLib::Get_TPLBP_Hog_Grid(imageROI, 9, 4, 4, 4, 4);
+		cv::Mat result;
+		ann->predict(feature, result);
+		float* pfRow = result.ptr<float>(0);
+		if (pfRow[0] > threshold)
+		{
+			vecend.push_back(vecObjects[i]);
+		}
+	}
+	return vecend;
+}
+Mat DrawFrame(Mat frame, vector<Rect> vecObjects)
+{
+	int x, y, w, h;
+	for (unsigned int i = 0; i < vecObjects.size(); i++)
+	{
+		Rect rect = vecObjects[i];
+		x = (int)(rect.x - (rect.width) * 0.0);
+		y = (int)(rect.y - (rect.height) * 0.0);
+		w = (int)(rect.width) * 1.0;
+		h = (int)(rect.height) * 1.0;
+
+		if (x < 0)
+			x = 0;
+		if (y < 0)
+			y = 0;
+		if ((x + w) > frame.cols)
+			w = (int)(frame.cols) - x;
+		if ((y + h) > frame.rows)
+			h = (int)(frame.rows) - y;
+		cv::rectangle(frame, Rect(x, y, w, h), Scalar(255, 0, 0), 2);
+	}
+	return frame;
+}
+

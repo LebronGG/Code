@@ -1,0 +1,101 @@
+#include "objdetect/objdetect.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/ml/ml.hpp"
+#include "opencv2/opencv.hpp"
+#include "ImageFeatrueExtract.h"
+#include <dlib\image_processing\frontal_face_detector.h>
+#include <dlib\gui_widgets.h>
+#include <dlib\image_io.h>
+#include<dlib\opencv.h>
+#include<iostream>
+
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+
+using namespace dlib;
+using namespace cv;
+using namespace ml;
+using namespace std;
+
+#define ADABOOST_MODEL_FILE						"./modelFile/lbp_4kx8k_12.xml"
+
+int main(int argc, char** argv)
+{
+	CascadeClassifier object_cascade;
+	object_cascade.load(ADABOOST_MODEL_FILE);  // load  Adaboost file
+	if (object_cascade.empty())
+	{
+		std::cout << " Load File Failed" << std::endl;
+		getchar();
+		return -1;
+	}
+	string text = "lebron";
+	int font_face = cv::FONT_HERSHEY_COMPLEX;
+	double font_scale = 1;
+	int thickness = 1;
+	int baseline;
+	Point origin;
+	VideoCapture cap(0);  //    D:\\video\\2\\Video 25.wmv  
+	if (!cap.isOpened())
+	{
+		cout << "open video error" << endl;
+	}
+	while (1)
+	{
+		Mat  faceROI, AdaImg, GrayfaceROI;
+		cap >> faceROI;
+		if (faceROI.channels() == 3)
+			cvtColor(faceROI, GrayfaceROI, COLOR_BGR2GRAY);
+		else
+			GrayfaceROI = faceROI;
+		std::vector<cv::Rect> vecObjects;
+		double timestart = (double)getTickCount();
+		object_cascade.detectMultiScale(GrayfaceROI, vecObjects, 1.1, 1, 0, Size(20, 20), Size(200, 200));
+		double nTime = ((double)getTickCount() - timestart) / getTickFrequency();
+		cout << "运行上面程序共耗时：" << nTime*1000 << "ms\n" << endl;
+		Mat temp;
+		faceROI.copyTo(temp);
+		for (unsigned int i = 0; i < vecObjects.size(); i++)
+		{
+			Rect rect1 = vecObjects[i];
+			int x1, y1, width, height;
+			x1 = (int)(rect1.x - (rect1.width) * 0.0);
+			y1 = (int)(rect1.y - (rect1.height) * 0.0);
+			width = (int)(rect1.width) * 1.0;
+			height = (int)(rect1.height) * 1.0;
+			if (x1 < 0)
+				x1 = 0;
+			if (y1 < 0)
+				y1 = 0;
+			if ((x1 + width) > temp.cols)
+			{
+				width = (int)(temp.cols) - x1 - 1;
+			}
+			if ((y1 + height) > temp.rows)
+			{
+				height = (int)(temp.rows) - y1 - 1;
+			}
+			cv::Mat imageROI = temp(Rect(x1, y1, width, height));
+			origin.x = x1;
+			origin.y = y1;
+			cv::Size text_size = cv::getTextSize(text, font_face, font_scale, thickness, &baseline);
+			cv::putText(faceROI, text, origin, font_face, font_scale, cv::Scalar(0, 255, 0), thickness, 4, 0);
+			cv::rectangle(faceROI, Rect(x1, y1, width, height), Scalar(255, 0, 0), 2);
+		}
+		cv::imshow("mine", faceROI);
+		int c = waitKey(1);
+		if (c == 27)
+			break;
+	}
+	destroyAllWindows();
+	return 0;
+}
+
+
+
+

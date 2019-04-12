@@ -1,0 +1,23 @@
+#include<opencv2\opencv.hpp>
+#include<iostream>
+
+using namespace std;
+using namespace cv;
+
+int main()
+{
+	VideoWriter video("test.avi", CV_FOURCC('M', 'J', 'P', 'G'), 25.0, Size(640, 480));
+	String pattern = "E:\\mine\\ͼƬ\\image_L\\*.png";
+	vector<String> fn;
+    glob(pattern, fn, false);
+	size_t count = fn.size();
+	for (size_t i = 0; i < count; i++)
+	{
+		Mat image = imread(fn[i]);
+		resize(image, image, Size(640, 480));
+		video << image;
+	}
+	cout << "" << endl;
+	system("pause");
+	return 0;
+}

@@ -1,0 +1,55 @@
+#include <opencv2/core/utility.hpp>
+#include <opencv2/tracking.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include <iostream>
+#include <cstring>
+
+#include <fstream>
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <stdio.h>
+
+using namespace std;
+using namespace cv;
+
+bool showCrosshair = false;
+bool fromCenter = false;
+
+int main() {
+	Rect2d roi;
+	Rect2d roi1;
+	Mat frame;
+	Ptr<Tracker> tracker = Tracker::create("KCF");
+	std::string video = "E:\\±³¹âÈËÁ³\\Video 18.wmv";
+	VideoCapture cap(video);
+	printf("Start the tracking process\n");
+	while (1)
+	{
+		cap >> frame;
+		int delay = 32;
+		if (delay >= 0 && waitKey(delay) >= 0)
+		{
+			roi = selectROI("tracker", frame, fromCenter, showCrosshair);
+			if (frame.empty())
+			{
+				cout << "Process Current Video Complete!" << endl;
+				break;
+			}
+			if (frame.rows == 0 || frame.cols == 0)
+				break;
+			tracker->init(frame, roi);
+		}	
+		tracker->update(frame, roi);
+		rectangle(frame, roi, Scalar(255, 0, 0), 2, 1);
+		imshow("tracker", frame);
+		if (waitKey(1) == 27)
+			break;
+	}
+	return 0;
+}
+
+

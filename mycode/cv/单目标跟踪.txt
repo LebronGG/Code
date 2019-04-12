@@ -1,0 +1,98 @@
+#include <opencv2/core/utility.hpp>
+#include <opencv2/tracking.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include <iostream>
+#include <cstring>
+
+
+#include<iostream>
+#include <atltime.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <io.h>
+#include <direct.h>
+#include <fstream>
+#include <stdio.h>
+
+using namespace std;
+using namespace cv;
+void ConvertYolo(Mat frame, Rect2d roi, int count);
+int main() {
+	Mat frame;
+	Mat face;
+	SYSTEMTIME st;
+	Ptr<Tracker> tracker = Tracker::create("KCF");
+	std::string video = "D:\\video\\xu\\Video 25.wmv";
+	VideoCapture cap(0);
+	cap >> frame;
+	bool showCrosshair = false;
+	bool fromCenter = false;
+	Rect2d roi = selectROI("Tracker", frame, fromCenter, showCrosshair);
+	if (roi.width == 0 || roi.height == 0)
+		return 0;
+	tracker->init(frame, roi);
+	printf("Start the tracking process\n");
+	while (1)
+	{
+		cap >> frame;
+		if (frame.empty())
+		{
+			cout << "Process Current Video Complete!" << endl;
+			break;
+		}
+		if (frame.rows == 0 || frame.cols == 0)
+			break;
+		tracker->update(frame, roi);
+		//ConvertYolo(frame, roi, 20);
+		rectangle(frame, roi, Scalar(255, 0, 0), 2, 1);
+		imshow("tracker", frame);
+		if (waitKey(1) == 27)
+			break;
+	}
+	return 0;
+}
+
+void ConvertYolo(Mat frame, Rect2d roi, int count)
+{
+#define ImgStorage                              "E:/cvtest/tracker/photos"
+#define LabelStorage                            "E:/cvtest/tracker/labels"
+	const string Storagelabel = LabelStorage;
+	const string Storageimg = ImgStorage;
+	static int framecount = 0;
+	SYSTEMTIME st;
+	char imgName[200];
+	char labelName[200];
+	char timeName[30];
+	float width = frame.cols;
+	float height = frame.rows;
+	float x = roi.x;
+	float y = roi.y;
+	float w = roi.width;
+	float h = roi.height;
+	x = (2 * x + w) / (2 * width);
+	y = (2 * y + h) / (2 * height);
+	w = w / width;
+	h = h / height;
+	GetLocalTime(&st);
+	int year = st.wYear;
+	int month = st.wMonth;
+	int day = st.wDay;
+	int hour = st.wHour;
+	int minute = st.wMinute;
+	int second = st.wSecond;
+	sprintf_s(timeName, "%04d%02d%02d%02d%02d%02d%s", year, month, day, hour, minute, second, "_");
+	sprintf_s(labelName, "%s/%s%d%s", Storagelabel.c_str(), timeName, framecount, ".txt");
+	sprintf_s(imgName, "%s/%s%d%s", Storageimg.c_str(), timeName, framecount, ".jpg");
+	framecount++;
+	if (framecount > 999)
+		framecount = 0;
+	imwrite(imgName, frame);
+	ofstream file(labelName);
+	cout << "1 " << x << " " << y << " " << w << " " << h << endl;
+	for (int i = 0; i < count; i++)
+	{	
+		file << "1 " << x << " " << y << " " << w << " " << h << endl;
+	}
+	rectangle(frame, roi, Scalar(255, 0, 0), 2, 1);
+}
